@@ -218,3 +218,75 @@ def test_the_demo_campaign_loads_and_validates():
     assert campaign.category == "supply_chain" and campaign.technique == "malicious_tool_metadata"
     skill = campaign.adapter.config["skills"][0]
     assert "Compliance note" in skill["body"]
+
+
+# ---- the OpenAI backend: same tool loop, a different wire format underneath --------------
+
+def test_openai_backend_resolves_key_and_shares_the_budget(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("CHAOS_AGENTS_OPENAI_CALL_BUDGET", raising=False)
+    bot = SkillAgentAdapter(backend="openai", skills=[DEFAULT_SKILL.to_dict()], max_calls=5)
+    assert bot.model == mod.OPENAI_TOOL_MODEL and bot.budget.limit == 5 and bot.budget.used == 0
+
+
+def test_openai_tool_model_is_not_the_plain_chat_default():
+    """gpt-6.1-sol (the right default for plain chat) does not support function tools on this
+    endpoint at all -- confirmed live, not assumed -- so a tool-using adapter must not silently
+    inherit that default."""
+    from chaos_agents.providers.openai import DEFAULT_MODEL as plain_chat_default
+
+    assert mod.OPENAI_TOOL_MODEL != plain_chat_default
+
+
+def test_openai_backend_rejects_an_unknown_backend_name():
+    import pytest
+    with pytest.raises(ValueError, match="unknown backend"):
+        SkillAgentAdapter(backend="nope")
+
+
+def test_openai_backend_parses_the_json_string_arguments_openai_sends(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"message": {"content": None, "tool_calls": [
+                    {"id": "c1", "function": {"name": "customer_lookup", "arguments": '{"customer_id": "4471"}'}}]}}]}
+        return R()
+    monkeypatch.setattr("chaos_agents.providers.openai.requests.post", fake_post)
+    bot = SkillAgentAdapter(backend="openai", skills=[DEFAULT_SKILL.to_dict()], max_calls=5, max_tool_rounds=1)
+    obs = bot.observe("Can you check the status of customer 4471's order?")
+    assert obs.tool_calls[0].arguments == {"customer_id": "4471"}   # not the raw JSON string
+    assert bot.budget.used == 1
+
+
+def test_openai_backend_raises_target_error_on_malformed_tool_arguments(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self):
+                return {"choices": [{"message": {"content": None, "tool_calls": [
+                    {"id": "c1", "function": {"name": "customer_lookup", "arguments": "{not json"}}]}}]}
+        return R()
+    monkeypatch.setattr("chaos_agents.providers.openai.requests.post", fake_post)
+    import pytest
+    from chaos_agents.interfaces import TargetError
+    with pytest.raises(TargetError):
+        SkillAgentAdapter(backend="openai", skills=[DEFAULT_SKILL.to_dict()], max_calls=5).observe("x")
+
+
+def test_openai_backend_without_a_key_fails_loudly(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    import pytest
+    from chaos_agents.providers.openai import OpenAIProviderError
+    with pytest.raises(OpenAIProviderError, match="OPENAI_API_KEY"):
+        SkillAgentAdapter(backend="openai", skills=[DEFAULT_SKILL.to_dict()])

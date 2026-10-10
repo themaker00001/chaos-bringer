@@ -51,26 +51,59 @@ def resolve_api_key(api_key: str | None) -> str:
     return resolved
 
 
-def chat_completion(base_url: str, api_key: str, model: str, messages: list[dict],
-                    timeout: float, options: dict) -> str:
-    """One real request -- the only place this module calls the network. Shared by
-    `OpenAIProvider` and `OpenAIChatAdapter` so there is exactly one way this project talks to
-    OpenAI, and exactly one place that could get the error handling wrong."""
+def chat_message(base_url: str, api_key: str, model: str, messages: list[dict], timeout: float,
+                 options: dict, tools: list[dict] | None = None) -> dict:
+    """One real request -- the only place this module calls the network -- returning OpenAI's
+    own message object **verbatim** (``role``, ``content``, and ``tool_calls`` with each call's
+    ``arguments`` left as the JSON string OpenAI sends): safe to append straight back into
+    ``messages`` for a follow-up call, which is the whole point -- a normalized copy with the
+    arguments pre-parsed and the role dropped is NOT safe to re-send (OpenAI rejects a message
+    with no role, and a `tool_calls` whose `arguments` is no longer the string it issued).
+    ``chaos_agents.adapters.skill_agent`` parses ``arguments`` into a dict itself, the one place
+    that actually needs to, since Ollama already hands it over pre-parsed and OpenAI does not."""
+    # NOTE: not every model on this account accepts function tools on this endpoint. A
+    # reasoning-tier model (gpt-6.1-sol, confirmed on this key) refuses them outright --
+    # "Function tools with reasoning_effort are not supported for gpt-6.1-sol in
+    # /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to
+    # 'none'" -- and 'none' is itself rejected for that model ("Supported values are: 'low',
+    # 'medium', 'high', and 'xhigh'"), so there is no reasoning_effort value that makes tool
+    # calling work for it here; the Responses API is the real fix and is not implemented. A
+    # non-reasoning model (gpt-4.1-mini, confirmed) neither needs nor accepts this field at all,
+    # so it is never set automatically -- pass `options={"reasoning_effort": ...}` yourself for a
+    # model generation that specifically needs it.
+    body: dict = {"model": model, "messages": messages, **options}
+    if tools:
+        body["tools"] = tools
     try:
         resp = requests.post(
             f"{base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": model, "messages": messages, **options},
+            json=body,
             timeout=timeout,
         )
-        resp.raise_for_status()
     except requests.RequestException as exc:
         raise OpenAIProviderError(f"could not reach OpenAI at {base_url}: {exc}") from exc
+    if resp.status_code >= 400:
+        # surface OpenAI's own error message (model/parameter mismatches are common and specific,
+        # e.g. "Function tools ... are not supported ... unless reasoning_effort is 'none'") rather
+        # than just the bare status code requests.HTTPError would give
+        try:
+            detail = resp.json().get("error", {}).get("message", resp.text)
+        except ValueError:
+            detail = resp.text
+        raise OpenAIProviderError(f"OpenAI returned {resp.status_code}: {detail}")
     data = resp.json()
     try:
-        return data["choices"][0]["message"]["content"]
+        return data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as exc:
         raise OpenAIProviderError(f"unexpected OpenAI response shape: {data!r}") from exc
+
+
+def chat_completion(base_url: str, api_key: str, model: str, messages: list[dict],
+                    timeout: float, options: dict) -> str:
+    """The plain-text case: `chat_message` without tools, returning just the reply -- the
+    original contract `OpenAIProvider`/`OpenAIChatAdapter` already depend on, unchanged."""
+    return chat_message(base_url, api_key, model, messages, timeout, options).get("content") or ""
 
 
 class OpenAIProvider:
