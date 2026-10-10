@@ -189,6 +189,12 @@ These runs are non-deterministic by nature (another sandbox run the same day rec
 **COMPROMISED** verdict and a timed-out trial that was scored inconclusive, not a pass).
 Run any of them yourself: [docs/PROOFS.md](docs/PROOFS.md#reproduce-any-of-it).
 
+**Cross-surface and agent-to-agent chains.** No model needed, fully deterministic: each image
+is the same campaign run twice -- vulnerable, then with its fix(es) applied.
+
+![Cross-surface attack chain: the vulnerable run fails with a privilege violation on database_write; the same campaign with both fixes applied passes](https://raw.githubusercontent.com/themaker00001/chaos-bringer/main/docs/proof/chain-rag-to-boundary.png)
+![Agent-to-agent trust chain: the vulnerable run executes grant_admin_access under a forged claimed identity; the same campaign with both fixes applied refuses it](https://raw.githubusercontent.com/themaker00001/chaos-bringer/main/docs/proof/a2a-trust-chain.png)
+
 ## Quickstart
 
 ```bash
