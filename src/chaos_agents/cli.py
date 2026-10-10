@@ -296,6 +296,28 @@ def _cmd_chain(args: argparse.Namespace) -> int:
     return 1 if report_.verdict == FAIL else 3 if report_.verdict == INCONCLUSIVE else 0
 
 
+def _cmd_a2a_chain(args: argparse.Namespace) -> int:
+    from chaos_agents import trustchain
+
+    try:
+        chain = trustchain.TrustChainConfig.from_yaml(args.chain)
+        report_ = trustchain.run_trust_chain(chain)
+    except trustchain.TrustChainError as exc:
+        print(f"invalid chain: {exc}", file=sys.stderr)
+        return 2
+    rendered = json.dumps(report_.to_dict(), indent=2)
+    if args.json:
+        print(rendered)
+    else:
+        print(f"{report_.name}: {report_.verdict.upper()} -- {report_.reason}\n")
+        for stage in report_.stages:
+            print(f"  [{stage.status:<7}] {stage.name}" + (f"  -- {stage.reason}" if stage.reason else ""))
+    if args.output:
+        Path(args.output).write_text(rendered)
+        print(f"report written to: {args.output}", file=sys.stderr)
+    return 1 if report_.verdict == FAIL else 3 if report_.verdict == INCONCLUSIVE else 0
+
+
 def _cmd_plugins(args: argparse.Namespace) -> int:
     for group in ("providers", "adapters", "vectors", "judges"):
         names = registry.available(f"chaos_agents.{group}")
@@ -392,6 +414,13 @@ def main(argv: list[str] | None = None) -> int:
     chain_p.add_argument("--json", action="store_true", help="print the full report (graph, events, verdict, replay)")
     chain_p.add_argument("--output", metavar="PATH", help="also write the JSON report to a file")
     chain_p.set_defaults(func=_cmd_chain)
+
+    a2a_chain_p = sub.add_parser(
+        "a2a-chain", help="run an agent-to-agent trust chain: untrusted origin -> delegation -> tool boundary -> verdict")
+    a2a_chain_p.add_argument("chain", help="path to a trust-chain YAML file (see campaigns/a2a_trust_exploitation.yaml)")
+    a2a_chain_p.add_argument("--json", action="store_true", help="print the full report (graph, events, verdict, replay)")
+    a2a_chain_p.add_argument("--output", metavar="PATH", help="also write the JSON report to a file")
+    a2a_chain_p.set_defaults(func=_cmd_a2a_chain)
 
     validate_p = sub.add_parser("validate", help="check a campaign file without running it")
     validate_p.add_argument("campaign", help="path to a campaign YAML file")

@@ -59,6 +59,7 @@ chatgpt_app = "chaos_agents.adapters.mcp_app:McpAppAdapter"
 sandbox = "chaos_agents.adapters.sandbox:SandboxTarget"
 toolbot = "chaos_agents.adapters.toolbot:ToolBotAdapter"
 fortress = "chaos_agents.adapters.fortress:FortressAdapter"
+a2a_trust = "chaos_agents.adapters.a2a_trust:A2ATrustAdapter"
 
 [project.entry-points."chaos_agents.vectors"]
 static_corpus = "chaos_agents.vectors.static_corpus:StaticCorpusVector"

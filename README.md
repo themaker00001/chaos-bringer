@@ -49,6 +49,7 @@ the rows below run with no model and no network, against the bundled `toolbot` d
 | **Taint tracking** | Plant a canary secret and follow it to the sink, even when it leaves base64-encoded and the reply looks clean. | `chaos-agents run campaigns/demo_dataflow.yaml` |
 | **Memory poisoning** | An instruction planted in one session fires in another. Control run first, so memory is never blamed for the agent's own behaviour. | `chaos-agents run campaigns/demo_memory.yaml` |
 | **Cross-surface chains** | A poisoned retrieval document, a behavior check against a clean control, and a separate tool-boundary test -- one coordinated campaign, not three isolated ones. | `chaos-agents chain campaigns/chain_rag_to_boundary.yaml` |
+| **Agent-to-agent trust chains** | Does a forged identity survive delegation through an orchestrator and reach a privileged agent's tool boundary? Real findings, real regressions. | `chaos-agents a2a-chain campaigns/a2a_trust_exploitation.yaml` |
 | **Attack graph** | How a finding happened, stage by stage: delivery → hijack → tool call → violation → sink → outcome. | `chaos-agents run … --graph` |
 | **OWASP + ATLAS** | Every finding is mapped to the OWASP Agentic Top 10 and MITRE ATLAS; tags flow into JSON and SARIF. | automatic |
 | **Security findings** | Stable ids (`CB-956b1f46`), full evidence, status. | `chaos-agents finding list` · `finding show CB-…` |
@@ -560,6 +561,45 @@ surfaces, and closing one does not imply the other is closed -- `document_truste
 stops the recipient list from changing but leaves the prohibited action unblocked; `hardened=true`
 closes the boundary regardless. `tests/test_campaignrunner.py` runs all four combinations and
 asserts the verdict only where it should flip.
+
+### Agent-to-agent trust chains
+
+The same idea, for a compromise that crosses *agents* instead of surfaces within one agent:
+does a forged trust claim in an untrusted worker survive delegation through an orchestrator and
+reach a privileged worker's tool boundary? Three deterministic agents, no model, no network:
+
+```
+Agent A  untrusted worker    composes a message, forging its claimed identity
+Agent B  orchestrator        delegates it -- does it preserve the TRUE origin, or relay the claim?
+Agent C  privileged worker   attempts a mock tool -- is authorization checked at execution time,
+                             regardless of what upstream agents claim?
+```
+
+```bash
+chaos-agents a2a-chain campaigns/a2a_trust_exploitation.yaml --json   # exits 1: compromised end to end
+```
+
+Same stage/dependency contract as the RAG chain above (`ChainStage`/`ChainEvent`/`ChainReport` are
+reused as-is), plus one `trace_id` shared by every stage and event, so the whole causal path --
+which message, which delegation, which decision -- reads back as one correlated thread. Ground
+truth lives in an authorization registry (`identity -> the instructions it may issue`), independent
+of anything a message claims about itself; the seeded defect is that Agent A's *true* identity has
+no entry for the instruction it asks for, but its *claimed* identity does. Two independent fixes,
+and the same lesson as before -- closing one is not a license to assume the other is closed:
+
+| `verify_origin` (B) | `enforce_at_execution` (C) | result |
+|---|---|---|
+| off | off | **compromised** -- the forged claim is relayed as fact and executed unconditionally |
+| off | **on** | held -- C refuses anything never independently verified, whatever it claims to be |
+| **on** | off | **still compromised** -- B correctly identifies the true origin; C ignores it and runs anyway |
+| **on** | **on** | held |
+
+This is also an ordinary adapter (`a2a_trust`), the identical simulation wrapped so the existing
+pipeline applies unchanged: `chaos-agents run campaigns/a2a_trust_exploitation.yaml` files it as a
+real finding through the normal policy path, `finding promote` writes a regression, and
+`replay --fix verify_origin=true --fix enforce_at_execution=true --record` closes it and marks it
+fixed -- the same `replay`/`regression` machinery every other target in this project uses, proven
+end to end in `tests/test_trustchain.py`.
 
 ### Attack graph and standards
 
