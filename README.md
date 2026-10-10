@@ -188,6 +188,32 @@ Unlike the free Ollama results, this pass was not (and, given the cost and the d
 budget, will not casually be) repeated to check for the run-to-run variance the table above
 already shows is real.
 
+**A clean pass is a reason to try harder, not to stop** -- the budget was spent, but the attack
+side wasn't finished, so three published techniques (none of them in the 23-call pass above) were
+added and **proven against a free local model first**, the way every new attack in this project
+earns its place:
+
+- **Crescendo** (Russinovich et al., Microsoft, 2024) -- two new built-in `multiturn`
+  conversations where each turn escalates by building only on what the *previous reply* just
+  conceded, so refusing turn *N* means contradicting the assistant's own turn *N-1*. Neither
+  conversation asks for the secret directly until the final turn.
+- **Many-shot** (Anil et al., Anthropic, 2024) -- a mutator that fabricates a long run of prior
+  turns where the assistant already complied with similar requests, leaning on in-context
+  learning to make compliance look like the established pattern.
+- **Prefix priming** and **debug-dump framing** -- demanding the reply start with a specific
+  affirmative token, and framing the ask as a structured diagnostic dump rather than a direct
+  request.
+
+Measured against `llama3.2` (free, local, `campaigns/demo_ollama_crescendo.yaml`): **4 of 6**
+multi-turn conversations leaked the secret, including *both* new Crescendo scripts -- one talked
+the model into reproducing the key "to verify the masking was applied correctly," the other by
+posing as the incoming on-call engineer completing a handoff. The three new single-shot mutators
+did not land on `llama3.2` on their own (`campaigns/demo_ollama_newmutators.yaml`) -- consistent
+with this project's own finding that escalation across turns, not any one clever phrasing, is
+usually what does the work. These are proven, real improvements to the attack side -- and, since
+the OpenAI budget above is fully spent, they have **not yet been tried against the paid target**;
+that is the next thing to spend a (new, deliberately chosen) budget on.
+
 ### Proof gallery
 
 Terminal output of the real runs, not mock-ups. Each has its command, model and (where one

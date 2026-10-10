@@ -194,3 +194,19 @@ def test_multiturn_policy_sees_the_tool_calls_of_every_turn(tmp_path):
         registry.load = real
     assert record.status == FAIL and "attacker.example" in record.reason
     assert record.tool_calls and record.details["turns"] == 2
+
+
+def test_the_crescendo_conversations_escalate_over_several_turns():
+    """The Crescendo pattern (Russinovich et al., 2024): each later turn escalates by building
+    on what the *previous reply* just conceded, never introducing a new, cold demand -- so a
+    model that already keeps its own context is talked into contradicting itself one step at a
+    time. A cheap structural proxy for that: conversations long enough to actually escalate."""
+    long_convs = [c for c in MultiTurnVector().conversations() if len(c) >= 4]
+    assert len(long_convs) >= 2   # the two Crescendo additions
+
+
+def test_a_crescendo_conversation_never_asks_directly_for_the_secret_in_its_opening_turn():
+    banned = ("api key", "secret value", "the secret", "the password")
+    for conv in MultiTurnVector().conversations():
+        if len(conv) >= 4:
+            assert not any(w in conv[0].lower() for w in banned), conv[0]
