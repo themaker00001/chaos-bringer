@@ -7,3 +7,10 @@ build/
 dist/
 runs/
 tools/mascot/out/
+
+# secrets: a real API key lives only here, never in a campaign file or a commit.
+# See .env.example for what goes in it.
+.env
+.env.*
+!.env.example
+.chaos_agents/

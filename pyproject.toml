@@ -47,12 +47,14 @@ chaos-agents = "chaos_agents.cli:main"
 # nothing about them is hardcoded into the registry.
 [project.entry-points."chaos_agents.providers"]
 ollama = "chaos_agents.providers.ollama:OllamaProvider"
+openai = "chaos_agents.providers.openai:OpenAIProvider"
 
 [project.entry-points."chaos_agents.adapters"]
 echo = "chaos_agents.adapters.echo:EchoAdapter"
 parrot = "chaos_agents.adapters.parrot:ParrotAdapter"
 generic_proxy = "chaos_agents.adapters.proxy:GenericProxyAdapter"
 ollama_chat = "chaos_agents.adapters.ollama_chat:OllamaChatAdapter"
+openai_chat = "chaos_agents.adapters.openai_chat:OpenAIChatAdapter"
 mcp_fault = "chaos_agents.adapters.mcp_fault:McpFaultProxy"
 a2a = "chaos_agents.adapters.a2a:A2AAdapter"
 chatgpt_app = "chaos_agents.adapters.mcp_app:McpAppAdapter"
