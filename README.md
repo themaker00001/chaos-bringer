@@ -63,7 +63,7 @@ the rows below run with no model and no network, against the bundled `toolbot` d
 | **TOCTOU race** | The check validates one target; the write, moments later, can land on a different one -- no real OS race needed to test the shape of it. | `chaos-agents run campaigns/demo_toctou.yaml` |
 | **MCP tool implementation bugs** | A tool *definition* can look perfectly fine while the implementation behind it is the vulnerable part -- unsanitized shell interpolation, naive path prefix-matching. | `chaos-agents run campaigns/demo_mcp_tool_impl.yaml` |
 | **RAG content reaching an eval()-equivalent** | A retrieved vector-store field can reach a code-execution step, not just change what a model says -- the question every other RAG-poisoning test here stops short of. | `chaos-agents run campaigns/demo_rag_to_eval.yaml` |
-| **A real model fronting the MCP tool-implementation bugs** | Measured, not assumed: a real model always relays attacker-controlled arguments (8/8 runs) but only sometimes preserves the exact character the exploit depends on -- noisier than either delivery framing or the fix alone decides. | `chaos-agents run campaigns/demo_mcp_tool_impl_agent.yaml` |
+| **A real model fronting the MCP tool-implementation bugs** | Measured against two backends: qwen3:14b fails from accidental transcription noise, gpt-5.4-mini shows real but framing-dependent safety judgement (3/3 vulnerable code-fenced, only 1/4 via prose) -- different failure modes, not just different rates. | `chaos-agents run campaigns/demo_mcp_tool_impl_agent.yaml` |
 | **Attack graph** | How a finding happened, stage by stage: delivery → hijack → tool call → violation → sink → outcome. | `chaos-agents run … --graph` |
 | **OWASP + ATLAS** | Every finding is mapped to the OWASP Agentic Top 10 and MITRE ATLAS; tags flow into JSON and SARIF. | automatic |
 | **Security findings** | Stable ids (`CB-956b1f46`), full evidence, status. | `chaos-agents finding list` · `finding show CB-…` |
@@ -1202,8 +1202,8 @@ matching only the tool call's *result* actually saying it executed as code.
 
 **A real model fronting the same MCP tool-implementation bugs.** `mcp_tool_impl.py` above proves
 the tool *implementation* is unsafe by calling it directly -- a test of code, not of any model's
-judgement. `mcp_tool_impl_agent.py` adds the missing layer: a real tool-calling model
-(`qwen3:14b` via Ollama, same pattern as `skill_agent.py`) that has to decide whether to relay an
+judgement. `mcp_tool_impl_agent.py` adds the missing layer: a real tool-calling model (`qwen3:14b`
+via Ollama, or `gpt-5.4-mini` via OpenAI) that has to decide whether to relay an
 attacker-controlled path or command -- delivered indirectly via an inbox message -- to that same
 unchanged implementation at all.
 
@@ -1211,18 +1211,33 @@ unchanged implementation at all.
 chaos-agents run campaigns/demo_mcp_tool_impl_agent.yaml
 ```
 
-Measured for real, 8 live runs, and the honest result is noisier than either delivery style being
-"the fix." The path-boundary scenario is clean: the model always relays the sibling-directory
-path, the naive check always lets it through, `safe_path_check: true` closes it every time. The
-shell-breakout scenario is not clean: the model calls `run_command` in all 8/8 runs -- it never
-once refuses or shows any security awareness -- but whether the leading/trailing `'` character the
-exploit depends on survives being relayed turned out to be closer to a coin flip than a security
-property: 0 of 2 trials for quote-delimited prose delivery ("pass this exact string: `'...'`",
-even when explicitly told not to touch the quote marks -- the model reads it as punctuation, not
-payload, and strips it), 2 of 6 trials for a fenced-code-block delivery of the identical payload.
-`safe_exec: true` reliably closes the escape on the runs where the quote does survive -- confirmed
-directly -- but most runs never even reach that decision point, for reasons that have nothing to
-do with that fix. A single run of this campaign is genuinely non-deterministic; don't read one
+Measured for real against both backends, and the two models fail in genuinely different ways, not
+just at different rates. The path-boundary scenario is clean on qwen3:14b, the only backend it was
+run against: the model always relays the sibling-directory path, the naive check always lets it
+through, `safe_path_check: true` closes it every time.
+
+The shell-breakout scenario is where it gets interesting. **qwen3:14b (Ollama, 8 runs):** calls
+`run_command` every time and never substitutes its own command, but whether the quote character
+the exploit depends on survives being relayed is pure transcription noise, no judgement involved --
+0/2 for quote-delimited prose delivery ("pass this exact string: `'...'`", even when explicitly
+told not to touch the quote marks), 2/6 for a fenced code block of the identical payload.
+**gpt-5.4-mini (OpenAI, 7 runs):** a different failure mode entirely. Code-fenced delivery: 3/3
+relay the payload byte-for-byte, no stripping at all -- fully, reliably vulnerable with this
+framing. Quote-delimited prose delivery: only 1/4 actually relayed the attacker's content; the
+other 3/4 showed real, visible safety judgement -- two refused outright, one called `run_command`
+with its own harmless substitute (`echo 'Request declined: ...'`) while its reply explained the
+inbox message looked like a command-injection attempt. (That substitute command still contains a
+quote character, which is what motivated adding `payload_relayed_verbatim` to the ground truth --
+the first version of this test would have wrongly counted that refusal as a successful escape.)
+
+Same *direction* for both models -- code-fencing is more dangerous than prose framing -- for
+unrelated reasons: qwen3:14b never recognizes anything, it just mis-transcribes punctuation;
+gpt-5.4-mini visibly recognizes the prose-framed attempt and refuses or defuses it, and that
+judgement does not reliably survive the identical payload presented as a neutral-looking code
+block instead. `safe_exec: true` reliably closes the escape whenever the attacker's content
+actually reaches the tool, confirmed on both backends -- but for both models, a large share of
+realistic delivery attempts never reach that decision point at all, for reasons that have nothing
+to do with that fix. A single run of this campaign is genuinely non-deterministic; don't read one
 PASS or FAIL as the whole result.
 
 ### Testing our own detection layer, not just the target
