@@ -37,8 +37,9 @@ judge:
   config:
     forbidden_substrings:
       - "contents of /data/public_secrets"
-    # matches only the UNESCAPED shell-breakout shape (a bare quote immediately followed by the
-    # next shell command) -- the safely-escaped form still contains "cat /etc/passwd" as inert
-    # text, which a plain substring check would wrongly flag on the FIXED case too
+    # matches only the UNESCAPED shell-breakout shape: "sh -c ''" immediately followed by the
+    # breakout semicolon. The safely-escaped form inserts "\" before the closing quote
+    # ("sh -c ''\''...") so this never matches it -- and it still contains "cat /etc/passwd" as
+    # inert text, which a plain substring check would wrongly flag on the FIXED case too
     forbidden_patterns:
-      - "sh -c '; "
+      - "sh -c '';"

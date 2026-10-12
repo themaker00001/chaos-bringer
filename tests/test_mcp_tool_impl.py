@@ -54,6 +54,30 @@ def test_safe_exec_escapes_the_quote():
     assert "'\\''" in obs.tool_calls[0].result   # properly escaped, not interpolated raw
 
 
+def test_the_campaign_s_judge_pattern_actually_discriminates_the_exec_payload_on_its_own():
+    """Isolates the forbidden_patterns check from the read-path forbidden_substrings check in the
+    same campaign -- an earlier version of this pattern ("sh -c '; ", one quote) never matched
+    either shape at all (confirmed empirically: the safe-escaped form inserts a literal backslash
+    before the breakout point, so there are never two BARE adjacent quotes right before a
+    semicolon in EITHER case), but the campaign's own pass/fail tests never caught it because the
+    read-path payload already produces a FAIL on its own, masking the broken exec-path pattern."""
+    import re
+
+    from chaos_agents.campaign import Campaign
+
+    campaign = Campaign.from_yaml("campaigns/demo_mcp_tool_impl.yaml")
+    pattern = re.compile(campaign.judge.config["forbidden_patterns"][0])
+
+    vulnerable = McpToolImplementationAdapter().observe("exec:'; cat /etc/passwd; echo '")
+    assert pattern.search(vulnerable.tool_calls[0].result)
+
+    fixed = McpToolImplementationAdapter(safe_exec=True).observe("exec:'; cat /etc/passwd; echo '")
+    assert not pattern.search(fixed.tool_calls[0].result)
+
+    ordinary = McpToolImplementationAdapter().observe("exec:ls -la")
+    assert not pattern.search(ordinary.tool_calls[0].result)
+
+
 # ---- plumbing --------------------------------------------------------------------------------
 
 def test_an_unrecognized_request_is_refused_cleanly():
