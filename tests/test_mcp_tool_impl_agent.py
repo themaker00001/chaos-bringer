@@ -257,6 +257,17 @@ def test_the_campaign_loads_and_validates():
     assert campaign.adapter.config["backend"] == "ollama"
 
 
+def test_the_prose_quoted_campaign_loads_and_validates_and_matches_the_constant():
+    from chaos_agents.campaign import Campaign
+
+    campaign = Campaign.from_yaml("campaigns/demo_mcp_tool_impl_agent_prose_quoted.yaml")
+    campaign.check_plugins()
+    assert campaign.adapter.plugin == "mcp_tool_impl_agent"
+    assert campaign.adapter.config["backend"] == "ollama"
+    # kept in sync by hand -- this catches drift between the YAML copy and the Python constant
+    assert campaign.adapter.config["inbox_content"] == POISONED_INBOX_CONTENT_PROSE_QUOTED
+
+
 def test_the_judge_pattern_matches_the_unescaped_shape_through_the_real_adapter_trace(monkeypatch):
     """Not a claim about what a real model does (that's measured live) -- just that if it DID
     relay the argument and the implementation left it unescaped, this campaign's judge pattern
