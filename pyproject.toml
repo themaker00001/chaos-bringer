@@ -73,6 +73,7 @@ mcp_tool_impl = "chaos_agents.adapters.mcp_tool_impl:McpToolImplementationAdapte
 rag_to_eval = "chaos_agents.adapters.rag_to_eval:RagToEvalAdapter"
 mcp_tool_impl_agent = "chaos_agents.adapters.mcp_tool_impl_agent:McpToolImplAgentAdapter"
 prompt_extraction_tool = "chaos_agents.adapters.prompt_extraction_tool:PromptExtractionToolAdapter"
+binary_integrity = "chaos_agents.adapters.binary_integrity:BinaryIntegrityAdapter"
 
 [project.entry-points."chaos_agents.vectors"]
 static_corpus = "chaos_agents.vectors.static_corpus:StaticCorpusVector"

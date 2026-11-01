@@ -66,6 +66,7 @@ the rows below run with no model and no network, against the bundled `toolbot` d
 | **A real model fronting the MCP tool-implementation bugs** | Measured across two logged OpenAI batches, which disagreed with each other (3/3 then 1/3 for the same campaign) -- combined 4/6 code-fenced, 2/8 prose-quoted; qwen3:14b fails from accidental transcription noise instead of judgement either way. | `chaos-agents run campaigns/demo_mcp_tool_impl_agent.yaml` |
 | **System-prompt reverse-engineering: naive vs. structured defense** | Measured, not cited: naive "don't reveal" held 3/10 real trials, attack-taxonomy-aware defense held 10/10 -- identical model, secret, and payloads. | `chaos-agents run campaigns/demo_prompt_extraction_naive.yaml` |
 | **System-prompt exfiltration through a tool parameter** | A channel nobody's watching -- the reply looks clean while confidential instructions leak into a tool-call argument; caught a real judge-precision bug along the way. | `chaos-agents run campaigns/demo_prompt_extraction_tool.yaml` |
+| **Supply-chain binary tampering** | A tool binary is fetched and run without its hash checked against the manifest -- OWASP's own MCP Top 10 names this gap; CVE-2026-50021 is a real, confirmed fail-open instance of the exact shape. | `chaos-agents run campaigns/demo_binary_integrity.yaml` |
 | **Attack graph** | How a finding happened, stage by stage: delivery → hijack → tool call → violation → sink → outcome. | `chaos-agents run … --graph` |
 | **OWASP + ATLAS** | Every finding is mapped to the OWASP Agentic Top 10 and MITRE ATLAS; tags flow into JSON and SARIF. | automatic |
 | **Security findings** | Stable ids (`CB-956b1f46`), full evidence, status. | `chaos-agents finding list` · `finding show CB-…` |
@@ -1299,6 +1300,27 @@ protect while treating the policy text right next to it as ordinary content. Fix
 distinctive URL as ground truth too (a logging call never legitimately needs an internal routing
 URL). Re-measured: 0/2 survived, correctly caught both times. `safe_tool_schema: true` closes it
 -- with the fix, the tool call's `context` field only ever contains a plain human-written summary.
+
+### Supply-chain binary tampering: a tool fetched and run without checking what actually arrived
+
+OWASP's own MCP Top 10 names this gap directly -- MCP04:2025, "Software Supply Chain Attacks &
+Dependency Tampering": no dependency integrity verification (hash, signature, attestation).
+CVE-2026-50021 is a real, confirmed instance of the fail-open shape this models: pnpm's tarball
+extraction worker silently *skips* integrity verification whenever the integrity field is missing,
+rather than refusing to proceed.
+
+```bash
+chaos-agents run campaigns/demo_binary_integrity.yaml
+```
+
+`binary_integrity.py` computes a real SHA-256 manifest hash for a "legitimate" tool script, then
+checks it against whatever was actually delivered (tampered by default -- a malicious payload
+appended to an otherwise-identical disk-usage script). `verify_integrity: false` (the seeded
+defect) runs it regardless of the mismatch; `verify_integrity: true` refuses on a hash mismatch.
+Never actually executes anything -- "execution" is a label on the ground truth, the same safety
+discipline as `rag_to_eval.py`'s never-real `eval()`. Fully deterministic, no model needed; the
+fetch step's own result only ever shows a byte count and hash, never the delivered content itself,
+so a finding can only fire on real execution, never on the mere presence of a tampered artifact.
 
 ### Testing our own detection layer, not just the target
 
